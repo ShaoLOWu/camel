@@ -83,12 +83,32 @@ def _coerce_arg(value: Any, annotation: Any) -> Any:
 
     Handles ``Model``, ``List[Model]``, ``Dict[str, Model]``,
     ``Optional[...]``, and ``Union[...]`` annotations recursively.
-    Non-model annotations are returned unchanged.
+    Scalar ``int``/``float``/``bool`` annotations coerce unambiguous
+    string forms (LLM tool calls frequently deliver numbers and
+    booleans as JSON strings); unparseable values pass through
+    unchanged. Other non-model annotations are returned unchanged.
     """
     # --- Plain BaseModel subclass (e.g. ``param: TodoItem``) ---
     if isinstance(annotation, type) and issubclass(annotation, BaseModel):
         if isinstance(value, dict):
             return annotation.model_validate(value)
+        return value
+
+    # --- Scalar numeric annotations: coerce parseable strings only ---
+    if annotation is int or annotation is float:
+        if isinstance(value, str):
+            try:
+                return annotation(value.strip())
+            except ValueError:
+                return value
+        return value
+
+    if annotation is bool and isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in ("true", "1", "yes"):
+            return True
+        if lowered in ("false", "0", "no"):
+            return False
         return value
 
     origin = get_origin(annotation)
